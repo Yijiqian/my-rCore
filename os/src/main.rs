@@ -19,6 +19,9 @@
 #![no_main]
 #![no_std]
 
+#[path = "boards/qemu.rs"]   // 告诉 Rust 编译器，不要按照默认的规则查找模块文件，而是直接使用指定的文件路径
+mod board;  // 声明一个名为 board 的模块，但是这个模块的代码不在默认的 board.rs 或 board/mod.rs 文件中，而是在 boards/qemu.rs 这个特定的文件中。
+
 #[macro_use]
 mod console;
 mod config;
@@ -28,6 +31,7 @@ mod logging;
 mod sync;
 mod loader;
 mod task;
+mod timer;
 
 /// 为什么要声明成 pub ?
 pub mod trap;
@@ -77,6 +81,10 @@ pub fn rust_main() -> ! {
     error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
     trap::init();  // 初始化 Trap 的处理入口点
     loader::load_app();  // 将所有应用程序的二进制文件加载到指定的内存地址中
+
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger();
+
     task::run_first_task();
     panic!("Unreachable in rust_main!");
 }
