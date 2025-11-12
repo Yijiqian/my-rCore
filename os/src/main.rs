@@ -21,18 +21,17 @@
 
 #[macro_use]
 mod console;
+mod config;
 mod lang_items;
 mod sbi;
 mod logging;
 mod sync;
+mod loader;
+mod task;
 
-/// 为什么是pub?
-pub mod batch;
-
-/// 为什么是pub?
+/// 为什么要声明成 pub ?
 pub mod trap;
-
-/// 为什么是pub?
+/// 为什么要声明成 pub ?
 pub mod syscall;
 
 use log::*;
@@ -77,8 +76,9 @@ pub fn rust_main() -> ! {
     );
     error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
     trap::init();  // 初始化 Trap 的处理入口点
-    batch::init();  
-    batch::run_next_app();  
+    loader::load_app();  // 将所有应用程序的二进制文件加载到指定的内存地址中
+    task::run_first_task();
+    panic!("Unreachable in rust_main!");
 }
 
 /// clear BSS segment

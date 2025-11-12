@@ -50,6 +50,7 @@ kernel:
 	@rm src/linker.ld
 
 clean:
+	@cd ../user && make clean
 	@cargo clean
 
 disasm: kernel
