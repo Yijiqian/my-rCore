@@ -5,19 +5,22 @@ mod task;
 use lazy_static::*;
 use crate::sync::UPSafeCell;
 use task::{TaskControlBlock, TaskStatus};
+use crate::trap::TrapContext;
 use context::TaskContext;
 use switch::__switch;
-use crate::loader::{get_num_app, init_app_cx};
-use crate::config::MAX_APP_NUM;
+use crate::loader::{get_app_data, get_num_app};
 use crate::sbi::shutdown;
 
+use alloc::vec::Vec;
+
+/// 任务管理器，用于声明一个全局静态的任务管理器，以统一管理所有任务
 pub struct TaskManager {
     num_app: usize,
     inner: UPSafeCell<TaskManagerInner>,
 }
 
 struct TaskManagerInner {
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     current_task: usize,
 }
 
@@ -82,6 +85,25 @@ impl TaskManager {
         }
         panic!("unreachable in run_first_task!")
     }
+
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
+    }
+
+    fn get_current_trap_cx(&self) -> &mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].get_trap_cx()
+    }
+
+    /// 改变当前任务的断点
+    pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].change_program_brk(size)
+    }
 }
 
 impl TaskManagerInner {
@@ -91,40 +113,38 @@ impl TaskManagerInner {
 }
 
 lazy_static! {
+    /// 声明并延迟初始化一个全局的任务管理器
     pub static ref TASK_MANAGER: TaskManager = {
+        println!("init TASK_MANAGER");
         let num_app = get_num_app();
-        let mut tasks = [
-            TaskControlBlock{
-                task_cx: TaskContext::zero_init(),
-                task_status: TaskStatus::UnInit
-            };
-            MAX_APP_NUM
-        ];
+        println!("num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
 
         for i in 0..num_app {
-            // 内核需要为每个任务构造用于第一次执行的任务上下文
-            // 应用第一次被执行时，应该只有Trap上下文，而没有任务切换上下文。
-            tasks[i].task_cx = TaskContext::goto_restore(init_app_cx(i));
-            tasks[i].task_status = TaskStatus::Ready;
+            tasks.push(TaskControlBlock::new(
+                get_app_data(i),
+                i
+            ));
         }
 
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
-                    tasks,
-                    current_task: 0,
-                })
-            },
+                tasks,
+                current_task: 0,
+            })},
         }
     };
 }
 
+/// 挂起当前任务，运行下一个任务
 pub fn suspend_current_and_run_next() {
     mark_current_suspended();
     run_next_task();
 }
 
+/// 终止当前任务，运行下一任务
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
@@ -142,6 +162,22 @@ fn run_next_task() {
     TASK_MANAGER.run_next_task();
 }
 
+/// 运行第一个任务
 pub fn run_first_task() {
     TASK_MANAGER.run_first_task();
+}
+
+/// 获取当前正在执行的应用的地址空间的 token
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+/// 获取当前应用的地址空间中的 trap 上下文
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
+}
+
+/// 改变当前正在运行任务的程序断点
+pub fn change_program_brk(size: i32) -> Option<usize> {
+    TASK_MANAGER.change_current_program_brk(size)
 }

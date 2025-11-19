@@ -5,7 +5,7 @@ use riscv::register::{
     scause::{self, Exception, Trap, Interrupt},
     sie, stval, stvec
 };
-use crate::syscall::syscall;
+use crate::{config::{TRAMPOLINE, TRAP_CONTEXT}, syscall::syscall, task::{current_trap_cx, current_user_token}};
 use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
 use crate::timer::set_next_trigger;
 use core::arch::global_asm;
@@ -21,18 +21,71 @@ pub fn init() {
     }
 }
 
+fn set_kernel_trap_entry() {
+    unsafe {
+        stvec::write(trap_from_kernel as usize, TrapMode::Direct);
+    }
+}
+
+fn set_user_trap_entry() {
+    unsafe {
+        stvec::write(TRAMPOLINE as usize, TrapMode::Direct);
+    }
+}
+
+/// 定义一个从trap 返回到用户级别的函数
+#[unsafe(no_mangle)]
+pub fn trap_return() -> ! {
+    set_user_trap_entry();
+    let trap_cx_ptr = TRAP_CONTEXT;
+    let user_satp = current_user_token();
+    unsafe extern "C" {
+        safe fn __alltraps();
+        safe fn __restore();
+    }
+    let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
+    unsafe {
+        core::arch::asm!(
+            "fence.i",
+            "jr {restore_va}",
+            restore_va = in(reg) restore_va,
+            in("a0") trap_cx_ptr,
+            in("a1") user_satp,
+            options(noreturn)
+        );
+    }
+    // panic!("Unreachable in back_to_user!");   // 这行代码永远无法到达，所以注释掉
+}
+
+/// 当在内核触发 trap 时，这里不做处理，简单的 panic 结束程序即可
+#[unsafe(no_mangle)]
+pub fn trap_from_kernel() -> ! {
+    panic!("a trap from kernel!");
+}
+
 /// handle an interrupt, exception, or system call from user space
 #[unsafe(no_mangle)]
-pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+pub fn trap_handler() -> ! {
+    set_kernel_trap_entry();
+    let cx = current_trap_cx();
+
     let scause = scause::read();
+    // stval 寄存器的主要作用是为 异常处理程序提供关于陷进的附加上下文信息，
+    // 帮助确定异常的具体原因和位置
     let stval = stval::read();
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
             cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
         }
-        Trap::Exception(Exception::StoreFault) | Trap::Exception(Exception::StorePageFault) => {
-            println!("[kernel] PageFault in application, kernel killed it.");
+        Trap::Exception(Exception::StoreFault) 
+        | Trap::Exception(Exception::StorePageFault)
+        | Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
+            println!(
+                "[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
+                stval, cx.sepc
+            );
             exit_current_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -51,7 +104,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             );
         }
     }
-    cx
+    trap_return();
 }
 
 pub use context::TrapContext;

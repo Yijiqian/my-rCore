@@ -6,15 +6,13 @@
     ld x\n, \n*8(sp)
 .endm
 
-    .section .text
+    .section .text.trampoline
     .globl __alltraps
     .globl __restore
     .align 2
 __alltraps:
     csrrw sp, sscratch, sp
-    # now sp->kernel stack, sscratch->user stack
-    # allocate a TrapContext on kernel stack
-    addi sp, sp, -34*8
+    # now sp->*TrapContext in user space, sscratch->user stack
     # save general-purpose registers
     sd x1, 1*8(sp)
     # skip sp(x2), we will save it later
@@ -31,26 +29,36 @@ __alltraps:
     csrr t1, sepc
     sd t0, 32*8(sp)
     sd t1, 33*8(sp)
-    # read user stack from sscratch and save it on the kernel stack
+    # 从 sscratch 中读取用户栈，并将其保存到 TrapContext 中
     csrr t2, sscratch
     sd t2, 2*8(sp)
-    # set input argument of trap_handler(cx: &mut TrapContext)
-    mv a0, sp
-    call trap_handler
+    # 加载 kernel_satp 到t0
+    ld t0, 34*8(sp)
+    # 加载 trap_handler 到 t1
+    ld t1, 36*8(sp)
+    # 加载内核栈到sp，即让sp 指向内核栈
+    ld sp, 35*8(sp)
+    # 往 satp CSR中写入 kernel_satp，以完成 用户地址空间 -> 内核地址空间 的切换
+    csrw satp, t0
+    sfence.vma
+    # 到这里为止，sscratch 寄存器中存储用户栈的地址，sp的指向由 用户空间的 TrapContext 转变为 内核栈
+    jr t1
 
 __restore:
-    # case1: start running app by __restore
-    # case2: back to U after handling trap
-    # mv sp, a0  注释掉，因为在 __switch 之后，sp 就已经正确指向了我们需要的 trap 上下文地址
-    # now sp->kernel stack(after allocated), sscratch->user stack
-    # restore sstatus/sepc
+    # a0: 用户空间的 TrapContext；a1: 用户空间 token
+    # 切换到用户空间
+    csrw satp, a1
+    sfence.vma
+    # 将 trap 上下文位置保存到 sscratch 寄存器中，这样 __alltraps 中才能基于它将 Trap 上下文保存到正确位置
+    csrw sscratch, a0
+    mv sp, a0
+    # 现在 sp 指向用户空间的 TrapContext，可以开始恢复trap上下文了
+    # 恢复 sstatus 和 sepc
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
-    ld t2, 2*8(sp)
     csrw sstatus, t0
     csrw sepc, t1
-    csrw sscratch, t2
-    # restore general-purpuse registers except sp/tp
+    # restore general-purpuse registers except x0/sp/tp
     ld x1, 1*8(sp)
     ld x3, 3*8(sp)
     .set n, 5
@@ -58,8 +66,6 @@ __restore:
         LOAD_GP %n
         .set n, n+1
     .endr
-    # release TrapContext on kernel stack
-    addi sp, sp, 34*8
-    # now sp->kernel stack, sscratch->user stack
-    csrrw sp, sscratch, sp
+    # 回到用户栈
+    ld sp, 2*8(sp)
     sret

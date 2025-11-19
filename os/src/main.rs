@@ -18,6 +18,14 @@
 #![deny(warnings)]
 #![no_main]
 #![no_std]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;  // Rust 内置的 crate
+
+#[macro_use]
+extern crate bitflags;
+
+use log::*;
 
 #[path = "boards/qemu.rs"]   // 告诉 Rust 编译器，不要按照默认的规则查找模块文件，而是直接使用指定的文件路径
 mod board;  // 声明一个名为 board 的模块，但是这个模块的代码不在默认的 board.rs 或 board/mod.rs 文件中，而是在 boards/qemu.rs 这个特定的文件中。
@@ -30,15 +38,17 @@ mod sbi;
 mod logging;
 mod sync;
 mod loader;
-mod task;
+/// 为什么要声明成 pub ?
+pub mod task;
 mod timer;
+
+mod mm;
+
 
 /// 为什么要声明成 pub ?
 pub mod trap;
 /// 为什么要声明成 pub ?
 pub mod syscall;
-
-use log::*;
 
 use core::arch::global_asm;
 global_asm!(include_str!("entry.asm"));
@@ -47,44 +57,17 @@ global_asm!(include_str!("link_app.S"));
 /// the rust entry-point of os
 #[unsafe(no_mangle)]
 pub fn rust_main() -> ! {
-    unsafe extern "C" {
-        safe fn stext(); // begin addr of text segment
-        safe fn etext(); // end addr of text segment
-        safe fn srodata(); // start addr of Read-Only data segment
-        safe fn erodata(); // end addr of Read-Only data ssegment
-        safe fn sdata(); // start addr of data segment
-        safe fn edata(); // end addr of data segment
-        safe fn sbss(); // start addr of BSS segment
-        safe fn ebss(); // end addr of BSS segment
-        safe fn boot_stack_lower_bound(); // stack lower bound
-        safe fn boot_stack_top(); // stack top
-    }
     clear_bss();
     logging::init();
-    println!("[kernel] Hello, world!");
-    trace!(
-        "[kernel] .text [{:#x}, {:#x})",
-        stext as usize, etext as usize
-    );
-    debug!(
-        "[kernel] .rodata [{:#x}, {:#x})",
-        srodata as usize, erodata as usize
-    );
-    info!(
-        "[kernel] .data [{:#x}, {:#x})",
-        sdata as usize, edata as usize
-    );
-    warn!(
-        "[kernel] boot_stack top=bottom={:#x}, lower_bound={:#x}",
-        boot_stack_top as usize, boot_stack_lower_bound as usize
-    );
-    error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
-    trap::init();  // 初始化 Trap 的处理入口点
-    loader::load_app();  // 将所有应用程序的二进制文件加载到指定的内存地址中
+    info!("[kernel] Hello, world!");
+    mm::init();
+
+    info!("[kernel] back to world!");
+    mm::remap_test();
+    trap::init();  // 初始化 Trap 的处理入口点为 __alltraps
 
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-
     task::run_first_task();
     panic!("Unreachable in rust_main!");
 }
@@ -95,7 +78,8 @@ fn clear_bss() {
         safe fn sbss();
         safe fn ebss();
     }
-    (sbss as usize..ebss as usize).for_each(|a| {
-        unsafe { (a as *mut u8).write_volatile(0) } 
-    });
+    unsafe {
+        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+                        .fill(0);
+    }
 }
