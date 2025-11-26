@@ -66,6 +66,18 @@ impl MapArea {
         }
     }
 
+    pub fn from_another(another: &MapArea) -> Self {
+        Self {
+            vpn_range: VPNRange::new(
+                another.vpn_range.get_start(),
+                another.vpn_range.get_end()
+            ),
+            data_frames: BTreeMap::new(),
+            map_type: another.map_type,
+            map_perm: another.map_perm,
+        }
+    }
+
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);  // 建立一个 vpn 在页表中的映射
@@ -160,6 +172,26 @@ impl MemorySet {
             page_table: PageTable::new(),
             areas: Vec::new(),
         }
+    }
+
+    pub fn from_existed_user(user_space: &MemorySet) -> MemorySet {
+        let mut memory_set = Self::new_bare();
+
+        memory_set.map_trampoline();
+
+        for area in user_space.areas.iter() {
+            let new_area = MapArea::from_another(area);
+            memory_set.push(new_area, None);
+            
+            // 从另一个地址空间复制数据
+            for vpn in area.vpn_range {
+                let src_ppn = user_space.translate(vpn).unwrap().ppn();
+                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
+                dst_ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+            }
+        }
+
+        memory_set
     }
 
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
@@ -271,10 +303,10 @@ impl MemorySet {
             let ph = elf.program_header(i).unwrap();
             // 程序头的类型为 Load ，表示它有被内核加载的必要
             if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
-                println!(" ph = {}", i);
+                // println!(" ph = {}", i);
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
-                println!("start_va = {:#x}, end_va = {:#x}", (ph.virtual_addr() as usize), ((ph.virtual_addr() + ph.mem_size()) as usize));
+                // println!("start_va = {:#x}, end_va = {:#x}", (ph.virtual_addr() as usize), ((ph.virtual_addr() + ph.mem_size()) as usize));
                 let mut map_perm = MapPermission::U;
                 let ph_flags = ph.flags();
                 if ph_flags.is_read()  { map_perm |= MapPermission::R; }
@@ -287,7 +319,7 @@ impl MemorySet {
                     map_perm,
                 );
                 max_end_vpn = map_area.vpn_range.get_end();
-                println!("max_end_vpn = {}", max_end_vpn.0);
+                // println!("max_end_vpn = {}", max_end_vpn.0);
                 memory_set.push(
                     map_area,
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize])
@@ -335,6 +367,17 @@ impl MemorySet {
         self.page_table.translate(vpn)
     }
 
+    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
+        if let Some((idx, area)) = self.areas
+                                       .iter_mut()
+                                       .enumerate()
+                                       .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
+        {
+            area.unmap(&mut self.page_table);
+            self.areas.remove(idx);
+        }
+    }
+
     #[allow(unused)]
     pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
         if let Some(area) = self.areas 
@@ -359,6 +402,10 @@ impl MemorySet {
         } else {
             false
         }
+    }
+
+    pub fn recycle_data_pages(&mut self) {
+        self.areas.clear();
     }
 }
 

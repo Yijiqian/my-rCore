@@ -62,13 +62,14 @@ pub fn rust_main() -> ! {
     info!("[kernel] Hello, world!");
     mm::init();
 
-    info!("[kernel] back to world!");
+    info!("[kernel] back tpo world!");
     mm::remap_test();
+    task::add_initproc();
     trap::init();  // 初始化 Trap 的处理入口点为 __alltraps
 
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    task::run_first_task();
+    task::run_tasks();
     panic!("Unreachable in rust_main!");
 }
 

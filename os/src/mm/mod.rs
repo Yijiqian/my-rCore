@@ -10,7 +10,7 @@ pub use frame_allocator::{FrameTracker, frame_alloc};
 pub use memory_set::remap_test;
 pub use memory_set::{KERNEL_SPACE, MapPermission, MemorySet};
 use page_table::{PTEFlags, PageTable};
-pub use page_table::{PageTableEntry, translated_byte_buffer};
+pub use page_table::{PageTableEntry, translated_byte_buffer, translated_str, translated_refmut};
 
 pub fn init() {
     // 全局动态内存分配器初始化，以使用 Rust 的堆数据结构

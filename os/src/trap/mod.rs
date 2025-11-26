@@ -67,30 +67,36 @@ pub fn trap_from_kernel() -> ! {
 #[unsafe(no_mangle)]
 pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
-    let cx = current_trap_cx();
-
+    let mut cx = current_trap_cx();
     let scause = scause::read();
     // stval 寄存器的主要作用是为 异常处理程序提供关于陷进的附加上下文信息，
     // 帮助确定异常的具体原因和位置
     let stval = stval::read();
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
+
+            
             cx.sepc += 4;
-            cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            cx = current_trap_cx();
+            // 将父进程的返回值设置成 子进程的pid
+            cx.x[10] = result as usize;
         }
         Trap::Exception(Exception::StoreFault) 
         | Trap::Exception(Exception::StorePageFault)
         | Trap::Exception(Exception::LoadFault)
-        | Trap::Exception(Exception::LoadPageFault) => {
+        | Trap::Exception(Exception::LoadPageFault) 
+        | Trap::Exception(Exception::InstructionFault) 
+        | Trap::Exception(Exception::InstructionPageFault) => {
             println!(
                 "[kernel] PageFault in application, bad addr = {:#x}, bad instruction = {:#x}, kernel killed it.",
                 stval, cx.sepc
             );
-            exit_current_and_run_next();
+            exit_current_and_run_next(-2);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            exit_current_and_run_next();
+            exit_current_and_run_next(-3);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();

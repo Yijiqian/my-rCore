@@ -17,7 +17,7 @@ pub fn init_frame_allocator() {
         safe fn ekernel();
     }
     FRAME_ALLOCATOR.exclusive_access()
-                   .init(PhysAddr::from(ekernel as usize).ceil(),
+                   .init(PhysAddr::from(ekernel as usize).ceil(),    // [ekernel, MEMORY_END] = [0x806d6000, 0x80800000]
                          PhysAddr::from(MEMORY_END).floor()
                         );
 }
@@ -47,7 +47,10 @@ impl FrameAllocator for StackFrameAllocator {
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
         } else {
-            if self.current == self.end { None }
+            if self.current == self.end { 
+                println!("All the frames haved beem used up!");
+                None 
+            }
             else {
                 self.current += 1;
                 Some((self.current - 1).into())

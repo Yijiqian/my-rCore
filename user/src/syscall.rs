@@ -5,6 +5,11 @@ const SYSCALL_EXIT: usize = 93;
 const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
 const SYSCALL_SBRK: usize = 214;
+const SYSCALL_EXEC: usize = 221;
+const SYSCALL_FORK: usize = 220;
+const SYSCALL_WAITPID: usize = 260;
+const SYSCALL_READ: usize = 63;
+const SYSCALL_GETPID: usize = 172;
 
 fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret: isize;
@@ -39,4 +44,24 @@ pub fn sys_get_time() -> isize {
 /// sys_sbrk 用于调整进程的数据段（堆）大小，通过移动程序断点来动态分配或释放内存。
 pub fn sys_sbrk(size: i32) -> isize {
     syscall(SYSCALL_SBRK, [size as usize, 0, 0])
+}
+
+pub fn sys_exec(path: &str) -> isize {
+    syscall(SYSCALL_EXEC, [path.as_ptr() as usize, 0, 0])
+}
+
+pub fn sys_fork() -> isize {
+    syscall(SYSCALL_FORK, [0,0,0])
+}
+
+pub fn sys_waitpid(pid: isize, exit_code: *mut i32) -> isize {
+    syscall(SYSCALL_WAITPID, [pid as usize, exit_code as usize, 0])
+}
+
+pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
+    syscall(SYSCALL_READ, [fd, buffer.as_mut_ptr() as usize, buffer.len()])
+}
+
+pub fn sys_getpid() -> isize {
+    syscall(SYSCALL_GETPID, [0, 0, 0])
 }

@@ -1,7 +1,9 @@
 use bitflags::*;
-use super::{PhysPageNum, VirtPageNum, VirtAddr, FrameTracker, frame_alloc, StepByOne};
+
+use super::{PhysPageNum, VirtPageNum, VirtAddr, FrameTracker, frame_alloc, StepByOne, PhysAddr};
 use alloc::vec::Vec;
 use alloc::vec;
+use alloc::string::String;
 
 
 bitflags!{
@@ -148,6 +150,15 @@ impl PageTable {
             .map(|pte| {pte.clone()})
     }
 
+    pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
+        self.find_pte(va.clone().floor()).map(|pte| {
+            let aligned_pa: PhysAddr = pte.ppn().into();
+            let offset = va.page_offset();
+            let aligned_pa_usize: usize = aligned_pa.into();
+            (aligned_pa_usize + offset).into()
+        })
+    }
+
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
@@ -180,4 +191,29 @@ pub fn translated_byte_buffer(
         start = end_va.into();
     }
     v
+}
+
+pub fn translated_str(token: usize, ptr: *const u8) -> String {
+    let page_table = PageTable::from_token(token);
+    let mut str = String::new();
+    let mut va = ptr as usize;
+    loop {
+        let ch: u8 = *(page_table.translate_va(VirtAddr::from(va)).unwrap().get_mut());
+        if ch == 0 {
+            break;
+        } else {
+            str.push(ch as char);
+            va += 1;
+        }
+    }
+    str
+}
+
+pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
+    let page_table = PageTable::from_token(token);
+    let va = ptr as usize;
+    page_table
+        .translate_va(VirtAddr::from(va))
+        .unwrap()
+        .get_mut()
 }
