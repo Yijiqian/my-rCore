@@ -1,19 +1,20 @@
 #![no_std]
 #![no_main]
+#![allow(clippy::println_empty_string)]
 
 extern crate alloc;
 
 #[macro_use]
 extern crate user_lib;
 
-const LF: u8 = 0x0au8;   // 换行符 - \n
-const CR: u8 = 0x0du8;   // 回车符 - \r
-const DL: u8 = 0x7fu8;   // 删除符 - DEL
-const BS: u8 = 0x08u8;   // 退格符 - \b
+const LF: u8 = 0x0au8;
+const CR: u8 = 0x0du8;
+const DL: u8 = 0x7fu8;
+const BS: u8 = 0x08u8;
 
 use alloc::string::String;
-use user_lib::{fork, exec, waitpid};
 use user_lib::console::getchar;
+use user_lib::{exec, fork, waitpid};
 
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {
@@ -23,13 +24,13 @@ pub fn main() -> i32 {
     loop {
         let c = getchar();
         match c {
-            LF | CR => {   // 换行符 \n 或 回车符 \r
+            LF | CR => {
                 println!("");
                 if !line.is_empty() {
                     line.push('\0');
                     let pid = fork();
                     if pid == 0 {
-                        // 子进程
+                        // child process
                         if exec(line.as_str()) == -1 {
                             println!("Error when executing!");
                             return -4;
@@ -39,18 +40,15 @@ pub fn main() -> i32 {
                         let mut exit_code: i32 = 0;
                         let exit_pid = waitpid(pid as usize, &mut exit_code);
                         assert_eq!(pid, exit_pid);
-                        println!(
-                            "Shell: Process {} exited with code {}",
-                            pid, exit_code
-                        );
+                        println!("Shell: Process {} exited with code {}", pid, exit_code);
                     }
                     line.clear();
                 }
                 print!(">> ");
             }
-            BS | DL => {   // 删除符 或 退格符
+            BS | DL => {
                 if !line.is_empty() {
-                    print!("{}", BS as char);  // 将屏幕上当前行的最后一个字符用空格替换掉
+                    print!("{}", BS as char);
                     print!(" ");
                     print!("{}", BS as char);
                     line.pop();

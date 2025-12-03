@@ -37,12 +37,13 @@ mod lang_items;
 mod sbi;
 mod logging;
 mod sync;
-mod loader;
 /// 为什么要声明成 pub ?
 pub mod task;
 mod timer;
 
 mod mm;
+mod fs;
+mod drivers;
 
 
 /// 为什么要声明成 pub ?
@@ -64,6 +65,7 @@ pub fn rust_main() -> ! {
 
     info!("[kernel] back tpo world!");
     mm::remap_test();
+    fs::list_apps();
     task::add_initproc();
     trap::init();  // 初始化 Trap 的处理入口点为 __alltraps
 

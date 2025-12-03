@@ -13,3 +13,9 @@ pub const MEMORY_END: usize = 0x88000000;
 
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
+
+// 硬编码 Qemu 上的 VirtIO 总线的 MMIO 地址区间（起始地址, 长度）。
+// 在创建内核地址空间的时候需要建立页表映射
+pub const MMIO: &[(usize, usize)] = &[
+    (0x10001000, 0x1000),
+];

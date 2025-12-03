@@ -4,6 +4,8 @@ MODE := release
 KERNEL_ELF := target/$(TARGET)/$(MODE)/os
 KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
+FS_IMG := ../user/target/$(TARGET)/$(MODE)/fs.img
+APPS := ../user/src/bin/*
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -25,9 +27,11 @@ OBJCOPY := rust-objcopy --binary-architecture=riscv64
 # Disassembly
 DISASM ?= -x
 
+TEST ?=
+
 # 这是一个自定义的构建目标，通常用于触发完整的构建过程
 # 作用：要构建 build 目标，需要先确保 env 和 $(KERNEL_BIN) 这两个先决条件已经完成
-build: env $(KERNEL_BIN)
+build: env $(KERNEL_BIN) fs-img
 
 env: 
 	(rustup target list | grep "riscv64gc-unknown-none-elf (installed)") || rustup target add $(TARGET)
@@ -38,6 +42,13 @@ env:
 # $@ 是一个自动变量，表示当前规则中的目标名称，在这里就是 KERNEL_BIN
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
+
+fs-img: $(APPS)
+	@cd ../user && make build TEST=$(TEST)
+	@rm -f $(FS_IMG)
+	@cd ../easy-fs-fuse && cargo run --release -- -s ../user/src/bin/ -t ../user/target/$(TARGET)/$(MODE)/
+
+$(APPS):
 
 # 行首的 @ 符号用于抑制命令的回显。
 # 第一行在 user 目录下执行 make build
@@ -66,7 +77,9 @@ run: run-inner
 QEMU_ARGS := -machine virt \
 			 -nographic \
 			 -bios $(BOOTLOADER) \
-			 -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+			 -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) \
+			 -drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+			 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 QEMU_NAME := qemu-system-riscv64
 qemu-version-check:

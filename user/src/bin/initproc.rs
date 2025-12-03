@@ -3,18 +3,16 @@
 
 #[macro_use]
 extern crate user_lib;
-use user_lib::{
-    fork,
-    wait,
-    exec,
-    yield_,
-};
+
+use user_lib::{exec, fork, wait, yield_};
 
 #[unsafe(no_mangle)]
 fn main() -> i32 {
-    if fork() == 0 {  // 子进程
+    if fork() == 0 {
+        // 父进程 程序逻辑
         exec("user_shell\0");
     } else {
+        // 子进程 程序逻辑
         loop {
             let mut exit_code: i32 = 0;
             let pid = wait(&mut exit_code);
@@ -24,8 +22,7 @@ fn main() -> i32 {
             }
             println!(
                 "[initproc] Released a zombie process, pid={}, exit_code={}",
-                pid,
-                exit_code,
+                pid, exit_code,
             );
         }
     }

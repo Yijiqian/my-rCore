@@ -6,7 +6,7 @@ extern crate user_lib;
 
 use user_lib::{exit, fork, wait};
 
-const MAX_CHILD: usize = 10;
+const MAX_CHILD: usize = 30;
 
 #[unsafe(no_mangle)]
 pub fn main() -> i32 {

@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use super::{VPNRange, VirtPageNum, FrameTracker, VirtAddr, PageTable, StepByOne, PhysPageNum, PhysAddr,
             PTEFlags, frame_alloc, PageTableEntry};
-use crate::config::{PAGE_SIZE, TRAMPOLINE, USER_STACK_SIZE, MEMORY_END, TRAP_CONTEXT};
+use crate::config::{PAGE_SIZE, TRAMPOLINE, USER_STACK_SIZE, MEMORY_END, TRAP_CONTEXT, MMIO};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use alloc::sync::Arc;
@@ -277,6 +277,17 @@ impl MemorySet {
             MapType::Identical,
             MapPermission::R | MapPermission::W,
         ), None);
+        
+        // 在内核启动阶段就映射了 VirtIO 总线的 MMIO 地址区间
+        println!("mapping memory-mapped registers");
+        for pair in MMIO {
+            memory_set.push(MapArea::new(
+                (*pair).0.into(),
+                ((*pair).0 + (*pair).1).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::W,
+            ), None);
+        }
 
         memory_set
     }
@@ -413,6 +424,10 @@ lazy_static! {
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> = Arc::new(unsafe {
         UPSafeCell::new(MemorySet::new_kernel())
     });
+}
+
+pub fn kernel_token() -> usize {
+    KERNEL_SPACE.exclusive_access().token()
 }
 
 pub fn remap_test() {

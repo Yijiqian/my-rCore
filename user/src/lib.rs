@@ -7,6 +7,7 @@ pub mod console;
 mod syscall;
 mod lang_items;
 use syscall::*;
+use bitflags::bitflags;
 
 use core::ptr::addr_of_mut;
 use buddy_system_allocator::LockedHeap;
@@ -101,4 +102,25 @@ pub fn sleep(period_ms: usize) {
     while sys_get_time() < start + period_ms as isize {
         sys_yield();
     }
+}
+
+// 借助 bitflags! 宏将一个 u32 的 flags 包装为一个 OpenFlags 结构体更易使用，
+// 它的 bits 字段可以将自身转回 u32
+bitflags! {
+    pub struct OpenFlags: u32 {
+        const RDONLY = 0;
+        const WRONLY = 1 << 0;
+        const RDWR = 1 << 1;
+        const CREATE = 1 << 9;
+        const TRUNC = 1 << 10;
+    }
+}
+
+pub fn open(path: &str, flags: OpenFlags) -> isize {
+    // 传给内核的参数是 待打开文件的文件名字符串的起始地址和标志位
+    sys_open(path, flags.bits)
+}
+
+pub fn close(fd: usize) -> isize {
+    sys_close(fd)
 }
